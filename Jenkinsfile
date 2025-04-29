@@ -7,9 +7,7 @@ pipeline {
     environment {
         APP_NAME = "register-app-pipeline"
         RELEASE = "1.0.0"
-        // DOCKER_USER سيتم تعريفه من الـcredentials
         IMAGE_TAG = "${RELEASE}-${BUILD_NUMBER}"
-        JENKINS_API_TOKEN = credentials("JENKINS_API_TOKEN")
     }
     stages {
         stage("Cleanup Workspace") {
@@ -32,7 +30,6 @@ pipeline {
                 sh "mvn test"
             }
         }
-        
         stage("SonarQube Analysis") {
             steps {
                 script {
@@ -49,7 +46,6 @@ pipeline {
                 }
             }
         }
-        
         stage("Docker Build & Push") {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'dockerhub', 
@@ -59,9 +55,7 @@ pipeline {
                         env.IMAGE_NAME = "${DOCKER_USER}/${APP_NAME}"
                         echo "Preparing to build image: ${IMAGE_NAME}:${IMAGE_TAG}"
                     }
-                    
                     sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
-                    
                     sh """
                         docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
                         docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:latest
@@ -71,7 +65,6 @@ pipeline {
                 }
             }
         }
-        
         stage("Trigger Deployment") {
             steps {
                 script {
@@ -86,10 +79,11 @@ pipeline {
             }
         }
     }
-    
     post {
         always {
-            sh 'docker logout'
+            node('Jenkins-Agent') {
+                sh 'docker logout'
+            }
         }
         success {
             echo "Pipeline completed successfully!"
