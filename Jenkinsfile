@@ -65,26 +65,32 @@ pipeline {
                 }
             }
         }
-        stage("Trigger Deployment") {
+        stage("Trivy Scan") {
             steps {
                 script {
-                    withCredentials([string(credentialsId: 'JENKINS_API_TOKEN', variable: 'API_TOKEN')]) {
-                        sh """
-                            curl -X POST \
-                            -H "Authorization: Bearer ${API_TOKEN}" \
-                            "${JENKINS_URL}/job/deploy-register-app/build"
-                        """
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub', 
+                                                    usernameVariable: 'DOCKER_USER', 
+                                                    passwordVariable: 'DOCKER_PASS')]) {
+                        sh "docker run -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image ${DOCKER_USER}/${APP_NAME}:latest --no-progress --scanners vuln --exit-code 0 --severity HIGH,CRITICAL --format table"
                     }
                 }
             }
         }
-    }
-    post {
-        always {
-            node('Jenkins-Agent') {
-                sh 'docker logout'
+        stage('Cleanup Artifacts') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub', 
+                                                    usernameVariable: 'DOCKER_USER', 
+                                                    passwordVariable: 'DOCKER_PASS')]) {
+                        sh "docker rmi ${IMAGE_NAME}:${IMAGE_TAG}"
+                        sh "docker rmi ${IMAGE_NAME}:latest"
+                    }
+                }
             }
         }
+
+    }
+    post {
         success {
             echo "Pipeline completed successfully!"
         }
