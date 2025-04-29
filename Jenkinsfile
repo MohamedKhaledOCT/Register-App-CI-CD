@@ -4,25 +4,29 @@ pipeline {
         jdk 'Java17'
         maven 'Maven3'
     }
+    environment {
+        APP_NAME = "register-app-pipeline"
+        RELEASE = "1.0.0"
+        // DOCKER_USER سيتم تعريفه من الـcredentials
+        IMAGE_TAG = "${RELEASE}-${BUILD_NUMBER}"
+        JENKINS_API_TOKEN = credentials("JENKINS_API_TOKEN")
+    }
     stages {
         stage("Cleanup Workspace") {
             steps {
                 cleanWs()
             }
         }
-
         stage("Checkout from SCM") {
             steps {
                 git branch: 'main', credentialsId: 'github', url: 'https://github.com/MohamedKhaledOCT/Register-App-CI-CD.git'
             }
         }
-
         stage("Build App") {
             steps {
                 sh "mvn clean package"
             }
         }
-
         stage("Test Application") {
             steps {
                 sh "mvn test"
@@ -38,7 +42,6 @@ pipeline {
                 }
             }
         }
-
         stage("Quality Gate") {
             steps {
                 script {
@@ -46,6 +49,53 @@ pipeline {
                 }
             }
         }
+        
+        stage("Docker Build & Push") {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub', 
+                                                 usernameVariable: 'DOCKER_USER', 
+                                                 passwordVariable: 'DOCKER_PASS')]) {
+                    script {
+                        env.IMAGE_NAME = "${DOCKER_USER}/${APP_NAME}"
+                        echo "Preparing to build image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                    }
+                    
+                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                    
+                    sh """
+                        docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:latest
+                        docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                        docker push ${IMAGE_NAME}:latest
+                    """
+                }
+            }
+        }
+        
+        stage("Trigger Deployment") {
+            steps {
+                script {
+                    withCredentials([string(credentialsId: 'JENKINS_API_TOKEN', variable: 'API_TOKEN')]) {
+                        sh """
+                            curl -X POST \
+                            -H "Authorization: Bearer ${API_TOKEN}" \
+                            "${JENKINS_URL}/job/deploy-register-app/build"
+                        """
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            sh 'docker logout'
+        }
+        success {
+            echo "Pipeline completed successfully!"
+        }
+        failure {
+            echo "Pipeline failed!"
+        }
     }
 }
-
